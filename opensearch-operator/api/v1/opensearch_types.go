@@ -155,6 +155,7 @@ type MonitoringConfig struct {
 	ScrapeInterval       string               `json:"scrapeInterval,omitempty"`
 	PluginURL            string               `json:"pluginUrl,omitempty"`
 	TLSConfig            *MonitoringConfigTLS `json:"tlsConfig,omitempty"`
+	Labels               map[string]string    `json:"labels,omitempty"`
 }
 
 type MonitoringConfigTLS struct {
@@ -266,6 +267,12 @@ type SecurityConfig struct {
 	AdminSecret corev1.LocalObjectReference `json:"adminSecret,omitempty"`
 	// Secret that contains fields username and password to be used by the operator to access the opensearch cluster for node draining. Must be set if custom securityconfig is provided.
 	AdminCredentialsSecret corev1.LocalObjectReference `json:"adminCredentialsSecret,omitempty"`
+	UpdateJob              SecurityUpdateJobConfig     `json:"updateJob,omitempty"`
+}
+
+// Specific configs for the SecurityConfig update job
+type SecurityUpdateJobConfig struct {
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type ImageSpec struct {
@@ -287,6 +294,8 @@ type AdditionalVolume struct {
 	ConfigMap *corev1.ConfigMapVolumeSource `json:"configMap,omitempty"`
 	// EmptyDir to use to populate the volume
 	EmptyDir *corev1.EmptyDirVolumeSource `json:"emptyDir,omitempty"`
+	// CSI object to use to populate the volume
+	CSI *corev1.CSIVolumeSource `json:"csi,omitempty"`
 	// Whether to restart the pods on content change
 	RestartPods bool `json:"restartPods,omitempty"`
 }
@@ -378,4 +387,25 @@ func (s ImageSpec) GetImage() string {
 		return ""
 	}
 	return *s.Image
+}
+
+func (s *Security) GetConfig() *SecurityConfig {
+	if s == nil {
+		return nil
+	}
+	return s.Config
+}
+
+func (s *Security) GetTls() *TlsConfig {
+	if s == nil {
+		return nil
+	}
+	return s.Tls
+}
+
+func (sc *SecurityConfig) GetUpdateJob() SecurityUpdateJobConfig {
+	if sc == nil {
+		return SecurityUpdateJobConfig{}
+	}
+	return sc.UpdateJob
 }

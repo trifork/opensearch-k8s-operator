@@ -290,9 +290,10 @@ func (r *IsmPolicyReconciler) CreateISMPolicyRequest() (*requests.Policy, error)
 	}
 
 	if r.instance.Spec.ISMTemplate != nil {
-		policy.ISMTemplate = &requests.ISMTemplate{}
-		policy.ISMTemplate.IndexPatterns = r.instance.Spec.ISMTemplate.IndexPatterns
-		policy.ISMTemplate.Priority = r.instance.Spec.ISMTemplate.Priority
+		ismTemplate := &requests.ISMTemplate{}
+		ismTemplate.IndexPatterns = r.instance.Spec.ISMTemplate.IndexPatterns
+		ismTemplate.Priority = r.instance.Spec.ISMTemplate.Priority
+		policy.ISMTemplate = append(policy.ISMTemplate, *ismTemplate)
 	}
 
 	if len(r.instance.Spec.States) > 0 {
@@ -426,7 +427,9 @@ func (r *IsmPolicyReconciler) CreateISMPolicyRequest() (*requests.Policy, error)
 				}
 				var indexPri *requests.IndexPriority
 				if action.IndexPriority != nil {
-					indexPri.Priority = action.IndexPriority.Priority
+					indexPri = &requests.IndexPriority{
+						Priority: action.IndexPriority.Priority,
+					}
 				}
 				var snapshot *requests.Snapshot
 				if action.Snapshot != nil {
@@ -454,13 +457,13 @@ func (r *IsmPolicyReconciler) CreateISMPolicyRequest() (*requests.Policy, error)
 				if action.Timeout != nil {
 					timeOut = action.Timeout
 				}
-				var readWrite *string
+				var readWrite *requests.ReadWrite
 				if action.ReadWrite != nil {
-					readWrite = action.ReadWrite
+					readWrite = &requests.ReadWrite{}
 				}
-				var readOnly *string
+				var readOnly *requests.ReadOnly
 				if action.ReadOnly != nil {
-					readOnly = action.ReadOnly
+					readOnly = &requests.ReadOnly{}
 				}
 				actions = append(actions, requests.Action{
 					ReplicaCount:  replicaCount,
