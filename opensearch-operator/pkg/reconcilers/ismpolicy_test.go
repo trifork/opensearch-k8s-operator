@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var seqno *int = new(int)
 var _ = Describe("ism policy reconciler", func() {
 	var (
 		transport  *httpmock.MockTransport
