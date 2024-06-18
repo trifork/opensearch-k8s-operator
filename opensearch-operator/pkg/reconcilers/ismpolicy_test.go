@@ -269,7 +269,7 @@ var _ = Describe("ism policy reconciler", func() {
 							instance.Name,
 						),
 						httpmock.NewJsonResponderOrPanic(200, responses.GetISMPolicyResponse{
-							Policy:         policyRequest,
+							Policy: policyRequest,
 						}).Once(failMessage),
 					)
 				})
@@ -295,8 +295,8 @@ var _ = Describe("ism policy reconciler", func() {
 							instance.Name,
 						),
 						httpmock.NewJsonResponderOrPanic(200, responses.GetISMPolicyResponse{
-							Policy:         policyRequest,
-							PolicyID:       "test-policy",
+							Policy:   policyRequest,
+							PolicyID: "test-policy",
 						}).Once(failMessage),
 					)
 					transport.RegisterResponder(
