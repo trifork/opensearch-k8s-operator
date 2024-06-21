@@ -24,8 +24,10 @@ import (
 )
 
 const (
-	opensearchIsmPolicyExists       = "ism policy already exists in Opensearch"
+	opensearchIsmPolicyExists       = "ISM Policy already exists in Opensearch"
 	opensearchIsmPolicyNameMismatch = "OpensearchISMPolicyNameMismatch"
+	opensearchClusterRequeueAfter   = 10 * time.Second
+	defaultRequeueAfter             = 30 * time.Second
 )
 
 type IsmPolicyReconciler struct {
@@ -75,11 +77,10 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 				instance.Status.State = opsterv1.OpensearchISMPolicyError
 			}
 			// Requeue after is 10 seconds if waiting for OpenSearch cluster
-			if retResult.Requeue && retResult.RequeueAfter == 10*time.Second {
+			if retResult.Requeue && retResult.RequeueAfter == opensearchClusterRequeueAfter {
 				instance.Status.State = opsterv1.OpensearchISMPolicyPending
 			}
-			// Requeue is after 30 seconds for normal reconciliation after creation/update
-			if retErr == nil && retResult.RequeueAfter == 30*time.Second {
+			if retErr == nil && retResult.Requeue {
 				instance.Status.State = opsterv1.OpensearchISMPolicyCreated
 				instance.Status.PolicyId = policyId
 			}
@@ -101,17 +102,19 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		reason = "error fetching opensearch cluster"
 		r.logger.Error(retErr, "failed to fetch opensearch cluster")
 		r.recorder.Event(r.instance, "Warning", opensearchError, reason)
-		return
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: opensearchClusterRequeueAfter,
+		}, retErr
 	}
 	if r.cluster == nil {
 		r.logger.Info("opensearch cluster does not exist, requeueing")
 		reason = "waiting for opensearch cluster to exist"
 		r.recorder.Event(r.instance, "Normal", opensearchPending, reason)
-		retResult = ctrl.Result{
+		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 10 * time.Second,
-		}
-		return
+			RequeueAfter: opensearchClusterRequeueAfter,
+		}, nil
 	}
 
 	// Check cluster ref has not changed
@@ -120,8 +123,11 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		reason = "cannot change the cluster a role refers to"
 		retErr = fmt.Errorf("%s", reason)
 		r.recorder.Event(r.instance, "Warning", opensearchRefMismatch, reason)
-		return
+		return ctrl.Result{
+			Requeue: false,
+		}, retErr
 	}
+
 	if pointer.BoolDeref(r.updateStatus, true) {
 		retErr = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
 			object.(*opsterv1.OpenSearchISMPolicy).Status.ManagedCluster = &r.cluster.UID
@@ -129,7 +135,10 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		if retErr != nil {
 			reason = fmt.Sprintf("failed to update status: %s", retErr)
 			r.recorder.Event(r.instance, "Warning", statusError, reason)
-			return
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: opensearchClusterRequeueAfter,
+			}, retErr
 		}
 	}
 
@@ -138,18 +147,20 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		r.logger.Info("opensearch cluster is not running, requeueing")
 		reason = "waiting for opensearch cluster status to be running"
 		r.recorder.Event(r.instance, "Normal", opensearchPending, reason)
-		retResult = ctrl.Result{
+		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 10 * time.Second,
-		}
-		return
+			RequeueAfter: opensearchClusterRequeueAfter,
+		}, nil
 	}
 
 	r.osClient, retErr = util.CreateClientForCluster(r.client, r.ctx, r.cluster, r.osClientTransport)
 	if retErr != nil {
 		reason = "error creating opensearch client"
 		r.recorder.Event(r.instance, "Warning", opensearchError, reason)
-		return
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: opensearchClusterRequeueAfter,
+		}, retErr
 	}
 
 	// If PolicyID is not provided explicitly, use metadata.name by default
@@ -163,7 +174,10 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		reason = "failed to get create the ism policy request"
 		r.logger.Error(retErr, reason)
 		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
-		return
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, retErr
 	}
 
 	existingPolicy, retErr := services.GetPolicy(r.ctx, r.osClient, policyId)
@@ -177,7 +191,10 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 			reason = "failed to create ism policy"
 			r.logger.Error(retErr, reason)
 			r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
-			return
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: defaultRequeueAfter,
+			}, retErr
 		}
 		// Mark the ISM Policy as not pre-existing (created by the operator)
 		retErr = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
@@ -186,11 +203,14 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		if retErr != nil {
 			reason = "failed to update custom resource object"
 			r.logger.Error(retErr, reason)
-			return
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: defaultRequeueAfter,
+			}, retErr
 		}
 		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 30 * time.Second,
+			RequeueAfter: defaultRequeueAfter,
 		}, nil
 	}
 	// If other error, report
@@ -198,7 +218,10 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		reason = "failed to get create the ism policy request"
 		r.logger.Error(retErr, reason)
 		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
-		return
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, retErr
 	}
 
 	// If the ISM policy exists in OpenSearch cluster and it is marked as pre-existing
@@ -209,14 +232,17 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		if retErr != nil {
 			reason = "failed to update custom resource object"
 			r.logger.Error(retErr, reason)
-			return
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: defaultRequeueAfter,
+			}, retErr
 		}
 		reason = opensearchIsmPolicyExists
-		r.logger.Error(errors.New("ISM Policy already exists in Opensearch"), reason)
+		r.logger.Error(errors.New(opensearchIsmPolicyExists), reason)
 		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 30 * time.Second,
-		}, nil
+			RequeueAfter: defaultRequeueAfter,
+		}, retErr
 	}
 
 	// Return if there are no changes
@@ -224,7 +250,7 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		r.logger.V(1).Info(fmt.Sprintf("user %s is in sync", r.instance.Name))
 		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 30 * time.Second,
+			RequeueAfter: defaultRequeueAfter,
 		}, nil
 	}
 
@@ -236,14 +262,17 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		reason = "failed to update ism policy with Opensearch API"
 		r.logger.Error(retErr, reason)
 		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
-		return
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, retErr
 	}
 
 	r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "policy updated in opensearch")
 
 	return ctrl.Result{
 		Requeue:      true,
-		RequeueAfter: 30 * time.Second,
+		RequeueAfter: defaultRequeueAfter,
 	}, nil
 }
 
