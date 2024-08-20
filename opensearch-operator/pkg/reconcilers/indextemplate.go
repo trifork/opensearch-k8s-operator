@@ -151,9 +151,9 @@ func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
 		return
 	}
 
-	templateName = r.instance.Spec.Name
-	if templateName != "" {
-		templateName = r.instance.Name
+	templateName = r.instance.Name
+	if r.instance.Spec.Name != "" {
+		templateName = r.instance.Spec.Name
 	}
 
 	// Check index template state to make sure we don't touch preexisting index templates

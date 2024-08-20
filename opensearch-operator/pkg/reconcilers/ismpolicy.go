@@ -164,16 +164,14 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 	}
 
 	// If PolicyID is not provided explicitly, use metadata.name by default
-	policyId = r.instance.Spec.PolicyID
-	if policyId == "" {
-		policyId = r.instance.Name
+	policyId = r.instance.Name
+	if r.instance.Spec.PolicyID != "" {
+		policyId = r.instance.Spec.PolicyID
 	}
 
 	newPolicy, retErr := r.CreateISMPolicy()
 	if retErr != nil {
-		reason = "failed to get create the ism policy request"
 		r.logger.Error(retErr, reason)
-		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: defaultRequeueAfter,
@@ -208,14 +206,17 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 				RequeueAfter: defaultRequeueAfter,
 			}, retErr
 		}
+
+		r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "policy successfully created in OpenSearch Cluster")
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: defaultRequeueAfter,
 		}, nil
 	}
+
 	// If other error, report
 	if retErr != nil {
-		reason = "failed to get create the ism policy request"
+		reason = "failed to get the ism policy from Opensearch API"
 		r.logger.Error(retErr, reason)
 		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
 		return ctrl.Result{
@@ -224,7 +225,7 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 		}, retErr
 	}
 
-	// If the ISM policy exists in OpenSearch cluster and it is marked as pre-existing
+	// If the ISM policy exists in OpenSearch cluster and was not created by the operator, update the status and return
 	if r.instance.Status.ExistingISMPolicy == nil || *r.instance.Status.ExistingISMPolicy {
 		retErr = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
 			object.(*opsterv1.OpenSearchISMPolicy).Status.ExistingISMPolicy = pointer.Bool(true)
@@ -237,12 +238,13 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 				RequeueAfter: defaultRequeueAfter,
 			}, retErr
 		}
-		reason = opensearchIsmPolicyExists
+		reason = "the ISM policy already exists in the OpenSearch cluster"
 		r.logger.Error(errors.New(opensearchIsmPolicyExists), reason)
+		r.recorder.Event(r.instance, "Warning", opensearchIsmPolicyExists, reason)
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: defaultRequeueAfter,
-		}, retErr
+		}, nil
 	}
 
 	// Return if there are no changes
@@ -398,35 +400,35 @@ func (r *IsmPolicyReconciler) CreateISMPolicy() (*requests.ISMPolicySpec, error)
 						shrink.ForceUnsafe = action.Shrink.ForceUnsafe
 					}
 					if action.Shrink.MaxShardSize == nil && action.Shrink.NumNewShards == nil && action.Shrink.PercentageOfSourceShards == nil {
-						reason := "Either of MaxShardSize or NumNewShards or PercentageOfSourceShards is required"
-						r.recorder.Event(r.instance, "Error", opensearchError, reason)
-						return nil, nil
+						reason := "either of MaxShardSize or NumNewShards or PercentageOfSourceShards is required"
+						r.recorder.Event(r.instance, "Error", opensearchCustomResourceError, reason)
+						return nil, errors.New(reason)
 					}
 
 					if action.Shrink.MaxShardSize != nil {
 						if action.Shrink.NumNewShards == nil && action.Shrink.PercentageOfSourceShards == nil {
 							shrink.MaxShardSize = action.Shrink.MaxShardSize
 						} else {
-							reason := "MaxShardSize can't exist with NumNewShards or PercentageOfSourceShards. Keep one of these."
-							r.recorder.Event(r.instance, "Error", opensearchError, reason)
-							return nil, nil
+							reason := "maxShardSize can't exist with NumNewShards or PercentageOfSourceShards. Keep one of these"
+							r.recorder.Event(r.instance, "Error", opensearchCustomResourceError, reason)
+							return nil, errors.New(reason)
 						}
 						if action.Shrink.NumNewShards != nil {
 							if action.Shrink.MaxShardSize == nil && action.Shrink.PercentageOfSourceShards == nil {
 								shrink.NumNewShards = action.Shrink.NumNewShards
 							} else {
-								reason := "NumNewShards can't exist with MaxShardSize or PercentageOfSourceShards. Keep one of these."
-								r.recorder.Event(r.instance, "Error", opensearchError, reason)
-								return nil, nil
+								reason := "numNewShards can't exist with MaxShardSize or PercentageOfSourceShards. Keep one of these"
+								r.recorder.Event(r.instance, "Error", opensearchCustomResourceError, reason)
+								return nil, errors.New(reason)
 							}
 						}
 						if action.Shrink.PercentageOfSourceShards != nil {
 							if action.Shrink.NumNewShards == nil && action.Shrink.MaxShardSize == nil {
 								shrink.PercentageOfSourceShards = action.Shrink.PercentageOfSourceShards
 							} else {
-								reason := "PercentageOfSourceShards can't exist with MaxShardSize or NumNewShards. Keep one of these."
-								r.recorder.Event(r.instance, "Error", opensearchError, reason)
-								return nil, nil
+								reason := "percentageOfSourceShards can't exist with MaxShardSize or NumNewShards. Keep one of these"
+								r.recorder.Event(r.instance, "Error", opensearchCustomResourceError, reason)
+								return nil, errors.New(reason)
 							}
 						}
 						if action.Shrink.TargetIndexNameTemplate != nil {
