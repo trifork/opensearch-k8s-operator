@@ -120,7 +120,7 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 	// Check cluster ref has not changed
 	managedCluster := r.instance.Status.ManagedCluster
 	if managedCluster != nil && *managedCluster != r.cluster.UID {
-		reason = "cannot change the cluster a role refers to"
+		reason = "cannot change the cluster a resource refers to"
 		retErr = fmt.Errorf("%s", reason)
 		r.recorder.Event(r.instance, "Warning", opensearchRefMismatch, reason)
 		return ctrl.Result{
@@ -250,6 +250,7 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 	// Return if there are no changes
 	if r.instance.Spec.PolicyID == existingPolicy.PolicyID && cmp.Equal(*newPolicy, existingPolicy.Policy, cmpopts.EquateEmpty()) {
 		r.logger.V(1).Info(fmt.Sprintf("user %s is in sync", r.instance.Name))
+		r.recorder.Event(r.instance, "Normal", opensearchAPIUnchanged, "policy is in sync")
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: defaultRequeueAfter,
@@ -271,7 +272,6 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 	}
 
 	r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "policy updated in opensearch")
-
 	return ctrl.Result{
 		Requeue:      true,
 		RequeueAfter: defaultRequeueAfter,
