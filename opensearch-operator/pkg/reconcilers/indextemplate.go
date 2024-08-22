@@ -173,7 +173,6 @@ func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
 			})
 			if err != nil {
 				reason = fmt.Sprintf("failed to update status: %s", err)
-				// r.logger.Error(retErr, reason) should this be added?
 				r.recorder.Event(r.instance, "Warning", statusError, reason)
 				return
 			}
