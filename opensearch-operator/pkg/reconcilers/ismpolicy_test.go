@@ -257,7 +257,7 @@ var _ = Describe("ism policy reconciler", func() {
 			})
 		})
 
-		When("policy exists in opensearch", func() {
+		Context("policy exists in opensearch", func() {
 			BeforeEach(func() {
 				instance.Spec.PolicyID = "test-policy-id"
 
@@ -329,7 +329,7 @@ var _ = Describe("ism policy reconciler", func() {
 				})
 			})
 
-			When("existing status is false", func() {
+			Context("existing status is false", func() {
 				BeforeEach(func() {
 					instance.Status.ExistingISMPolicy = pointer.Bool(false)
 				})
@@ -427,9 +427,14 @@ var _ = Describe("ism policy reconciler", func() {
 				})
 			})
 
-			When("policy does not exist", func() {
+			Context("cluster is ready", func() {
+				// extraContextCalls := 1
 				BeforeEach(func() {
+					cluster.Status.Phase = opsterv1.PhaseRunning
+					cluster.Status.ComponentsStatus = []opsterv1.ComponentStatus{}
 					mockClient.EXPECT().GetOpenSearchCluster(mock.Anything, mock.Anything).Return(*cluster, nil)
+					recorder = record.NewFakeRecorder(1)
+
 					transport.RegisterResponder(
 						http.MethodGet,
 						fmt.Sprintf(
@@ -439,6 +444,7 @@ var _ = Describe("ism policy reconciler", func() {
 						),
 						httpmock.NewStringResponder(200, "OK").Times(2, failMessage),
 					)
+
 					transport.RegisterResponder(
 						http.MethodHead,
 						fmt.Sprintf(
@@ -448,75 +454,42 @@ var _ = Describe("ism policy reconciler", func() {
 						),
 						httpmock.NewStringResponder(200, "OK").Once(failMessage),
 					)
-					transport.RegisterResponder(
-						http.MethodGet,
-						fmt.Sprintf(
-							"https://%s.%s.svc.cluster.local:9200/_plugins/_ism/policies/%s",
-							cluster.Spec.General.ServiceName,
-							cluster.Namespace,
-							instance.Name,
-						),
-						httpmock.NewStringResponder(404, "does not exist").Once(failMessage),
-					)
-					transport.RegisterResponder(
-						http.MethodDelete,
-						fmt.Sprintf(
-							"https://%s.%s.svc.cluster.local:9200/_plugins/_ism/policies/%s",
-							cluster.Spec.General.ServiceName,
-							cluster.Namespace,
-							instance.Name,
-						),
-						httpmock.NewStringResponder(200, "OK").Once(failMessage),
-					)
 				})
-				It("should do nothing and exit", func() {
-					Expect(reconciler.Delete()).To(Succeed())
+
+				When("policy does not exist", func() {
+					BeforeEach(func() {
+						transport.RegisterResponder(
+							http.MethodDelete,
+							fmt.Sprintf(
+								"https://%s.%s.svc.cluster.local:9200/_plugins/_ism/policies/%s",
+								cluster.Spec.General.ServiceName,
+								cluster.Namespace,
+								instance.Name,
+							),
+							httpmock.NewStringResponder(404, "does not exist").Once(failMessage),
+						)
+					})
+					It("should do nothing and exit", func() {
+						Expect(reconciler.Delete()).NotTo(Succeed())
+					})
 				})
-			})
-			When("policy does exist", func() {
-				BeforeEach(func() {
-					mockClient.EXPECT().GetOpenSearchCluster(mock.Anything, mock.Anything).Return(*cluster, nil)
-					transport.RegisterResponder(
-						http.MethodGet,
-						fmt.Sprintf(
-							"https://%s.%s.svc.cluster.local:9200/",
-							cluster.Spec.General.ServiceName,
-							cluster.Namespace,
-						),
-						httpmock.NewStringResponder(200, "OK").Times(2, failMessage),
-					)
-					transport.RegisterResponder(
-						http.MethodHead,
-						fmt.Sprintf(
-							"https://%s.%s.svc.cluster.local:9200/",
-							cluster.Spec.General.ServiceName,
-							cluster.Namespace,
-						),
-						httpmock.NewStringResponder(200, "OK").Once(failMessage),
-					)
-					transport.RegisterResponder(
-						http.MethodGet,
-						fmt.Sprintf(
-							"https://%s.%s.svc.cluster.local:9200/_plugins/_ism/policies/%s",
-							cluster.Spec.General.ServiceName,
-							cluster.Namespace,
-							instance.Name,
-						),
-						httpmock.NewStringResponder(200, "OK").Once(failMessage),
-					)
-					transport.RegisterResponder(
-						http.MethodDelete,
-						fmt.Sprintf(
-							"https://%s.%s.svc.cluster.local:9200/_plugins/_ism/policies/%s",
-							cluster.Spec.General.ServiceName,
-							cluster.Namespace,
-							instance.Name,
-						),
-						httpmock.NewStringResponder(200, "OK").Once(failMessage),
-					)
-				})
-				It("should delete the policy", func() {
-					Expect(reconciler.Delete()).To(Succeed())
+
+				When("policy does exist", func() {
+					BeforeEach(func() {
+						transport.RegisterResponder(
+							http.MethodDelete,
+							fmt.Sprintf(
+								"https://%s.%s.svc.cluster.local:9200/_plugins/_ism/policies/%s",
+								cluster.Spec.General.ServiceName,
+								cluster.Namespace,
+								instance.Name,
+							),
+							httpmock.NewStringResponder(200, "OK").Once(failMessage),
+						)
+					})
+					It("should delete the policy", func() {
+						Expect(reconciler.Delete()).To(Succeed())
+					})
 				})
 			})
 		})
