@@ -12,6 +12,7 @@ import (
 	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/pkg/reconcilers/k8s"
 	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/pkg/reconcilers/util"
 	"github.com/cisco-open/operator-tools/pkg/reconciler"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -236,6 +237,8 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 	}
 
 	// Return if there are no changes
+	r.logger.Info(spew.Sdump(existingTemplate))
+	r.logger.Info(spew.Sdump(newTemplate))
 	if r.instance.Spec.Name == existingTemplate.Name && cmp.Equal(*newTemplate, existingTemplate.IndexTemplate, cmpopts.EquateEmpty()) {
 		r.logger.Info("Index template is in sync, no changes needed", "templateName", templateName)
 		r.recorder.Event(r.instance, "Normal", opensearchAPIUnchanged, "index template is in sync")
