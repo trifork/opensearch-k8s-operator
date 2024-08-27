@@ -153,6 +153,7 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 	if retErr != nil {
 		reason = "error creating opensearch client"
 		r.recorder.Event(r.instance, "Warning", opensearchError, reason)
+		r.logger.Error(retErr, "failed to create opensearch client")
 		return
 	}
 
@@ -167,9 +168,10 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 	existingTemplate, retErr := r.osClient.GetIndexTemplate(r.ctx, templateName)
 	// If not exists, create
 	if errors.Is(retErr, services.ErrNotFound) {
+		r.logger.Info("Index template not found, creating new template", "templateName", templateName)
 		retErr = r.osClient.PutIndexTemplate(r.ctx, templateName, newTemplate)
 		if retErr != nil {
-			reason = "failed to create ism policy"
+			reason = "failed to create index template"
 			r.logger.Error(retErr, reason)
 			r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
 			return ctrl.Result{
@@ -191,6 +193,7 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 		}
 
 		r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "index template successfully created in OpenSearch Cluster")
+		r.logger.Info("Index template created successfully", "templateName", templateName)
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: defaultRequeueAfter,
@@ -202,6 +205,7 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 		reason = "failed to get the index template from Opensearch API"
 		r.logger.Error(retErr, reason)
 		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
+		r.logger.Info("Failed to get index template", "templateName", templateName)
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: defaultRequeueAfter,
@@ -210,6 +214,7 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 
 	// If the index template exists in OpenSearch cluster and was not created by the operator, update the status and return
 	if r.instance.Status.ExistingIndexTemplate == nil || *r.instance.Status.ExistingIndexTemplate {
+		r.logger.Info("Index template already exists in OpenSearch cluster", "templateName", templateName)
 		retErr = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
 			object.(*opsterv1.OpensearchIndexTemplate).Status.ExistingIndexTemplate = pointer.Bool(true)
 		})
@@ -232,7 +237,7 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 
 	// Return if there are no changes
 	if r.instance.Spec.Name == existingTemplate.Name && cmp.Equal(*newTemplate, existingTemplate.IndexTemplate, cmpopts.EquateEmpty()) {
-		r.logger.V(1).Info(fmt.Sprintf("index template %s is in sync", r.instance.Name))
+		r.logger.Info("Index template is in sync, no changes needed", "templateName", templateName)
 		r.recorder.Event(r.instance, "Normal", opensearchAPIUnchanged, "index template is in sync")
 		return ctrl.Result{
 			Requeue:      true,
@@ -240,6 +245,7 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 		}, nil
 	}
 
+	r.logger.Info("Updating index template", "templateName", templateName)
 	retErr = r.osClient.PutIndexTemplate(r.ctx, templateName, newTemplate)
 	if retErr != nil {
 		reason = "failed to update the index template with Opensearch API"
@@ -251,7 +257,8 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 		}, retErr
 	}
 
-	r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "index template updated in opensearch")
+	r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "index template updated in OpenSearch")
+	r.logger.Info("Index template updated successfully", "templateName", templateName)
 	return ctrl.Result{
 		Requeue:      true,
 		RequeueAfter: defaultRequeueAfter,
