@@ -51,7 +51,7 @@ func NewIsmReconciler(
 	options := ReconcilerOptions{}
 	options.apply(opts...)
 	return &IsmPolicyReconciler{
-		client:            k8s.NewK8sClient(client, ctx, reconciler.WithLog(log.FromContext(ctx).WithValues("reconciler", "role"))),
+		client:            k8s.NewK8sClient(client, ctx, reconciler.WithLog(log.FromContext(ctx).WithValues("reconciler", "ismpolicy"))),
 		ReconcilerOptions: options,
 		ctx:               ctx,
 		recorder:          recorder,
@@ -249,7 +249,7 @@ func (r *IsmPolicyReconciler) Reconcile() (retResult ctrl.Result, retErr error) 
 
 	// Return if there are no changes
 	if r.instance.Spec.PolicyID == existingPolicy.PolicyID && cmp.Equal(*newPolicy, existingPolicy.Policy, cmpopts.EquateEmpty()) {
-		r.logger.V(1).Info(fmt.Sprintf("user %s is in sync", r.instance.Name))
+		r.logger.V(1).Info(fmt.Sprintf("ism policy %s is in sync", r.instance.Name))
 		r.recorder.Event(r.instance, "Normal", opensearchAPIUnchanged, "policy is in sync")
 		return ctrl.Result{
 			Requeue:      true,
@@ -578,9 +578,5 @@ func (r *IsmPolicyReconciler) Delete() error {
 		policyId = r.instance.Name
 	}
 
-	err = services.DeleteISMPolicy(r.ctx, r.osClient, policyId)
-	if err != nil {
-		return err
-	}
-	return nil
+	return services.DeleteISMPolicy(r.ctx, r.osClient, policyId)
 }

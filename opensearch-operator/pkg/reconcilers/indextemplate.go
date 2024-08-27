@@ -2,6 +2,7 @@ package reconcilers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/pkg/reconcilers/util"
 	"github.com/cisco-open/operator-tools/pkg/reconciler"
 	"github.com/go-logr/logr"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
@@ -46,7 +49,7 @@ func NewIndexTemplateReconciler(
 	options := ReconcilerOptions{}
 	options.apply(opts...)
 	return &IndexTemplateReconciler{
-		client:            k8s.NewK8sClient(client, ctx, reconciler.WithLog(log.FromContext(ctx).WithValues("reconciler", "role"))),
+		client:            k8s.NewK8sClient(client, ctx, reconciler.WithLog(log.FromContext(ctx).WithValues("reconciler", "indextemplate"))),
 		ReconcilerOptions: options,
 		ctx:               ctx,
 		recorder:          recorder,
@@ -55,7 +58,7 @@ func NewIndexTemplateReconciler(
 	}
 }
 
-func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
+func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr error) {
 	var reason string
 	var templateName string
 
@@ -68,13 +71,13 @@ func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
 		err := r.client.UdateObjectStatus(r.instance, func(object client.Object) {
 			instance := object.(*opsterv1.OpensearchIndexTemplate)
 			instance.Status.Reason = reason
-			if err != nil {
+			if retErr != nil {
 				instance.Status.State = opsterv1.OpensearchIndexTemplateError
 			}
-			if result.Requeue && result.RequeueAfter == 10*time.Second {
+			if retResult.Requeue && retResult.RequeueAfter == 10*time.Second {
 				instance.Status.State = opsterv1.OpensearchIndexTemplatePending
 			}
-			if err == nil && result.RequeueAfter == 30*time.Second {
+			if retErr == nil && retResult.RequeueAfter == 30*time.Second {
 				instance.Status.State = opsterv1.OpensearchIndexTemplateCreated
 				instance.Status.IndexTemplateName = templateName
 			}
@@ -88,13 +91,13 @@ func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
 		}
 	}()
 
-	r.cluster, err = util.FetchOpensearchCluster(r.client, r.ctx, types.NamespacedName{
+	r.cluster, retErr = util.FetchOpensearchCluster(r.client, r.ctx, types.NamespacedName{
 		Name:      r.instance.Spec.OpensearchRef.Name,
 		Namespace: r.instance.Namespace,
 	})
-	if err != nil {
+	if retErr != nil {
 		reason = "error fetching opensearch cluster"
-		r.logger.Error(err, "failed to fetch opensearch cluster")
+		r.logger.Error(retErr, "failed to fetch opensearch cluster")
 		r.recorder.Event(r.instance, "Warning", opensearchError, reason)
 		return
 	}
@@ -103,7 +106,7 @@ func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
 		r.logger.Info("opensearch cluster does not exist, requeueing")
 		reason = "waiting for opensearch cluster to exist"
 		r.recorder.Event(r.instance, "Normal", opensearchPending, reason)
-		result = ctrl.Result{
+		retResult = ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: 10 * time.Second,
 		}
@@ -111,24 +114,27 @@ func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
 	}
 
 	// Check cluster ref has not changed
-	if r.instance.Status.ManagedCluster != nil {
-		if *r.instance.Status.ManagedCluster != r.cluster.UID {
-			reason = "cannot change the cluster an index template refers to"
-			err = fmt.Errorf("%s", reason)
-			r.recorder.Event(r.instance, "Warning", opensearchRefMismatch, reason)
-			return
-		}
-	} else {
-		if pointer.BoolDeref(r.updateStatus, true) {
-			err = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
-				instance := object.(*opsterv1.OpensearchIndexTemplate)
-				instance.Status.ManagedCluster = &r.cluster.UID
-			})
-			if err != nil {
-				reason = fmt.Sprintf("failed to update status: %s", err)
-				r.recorder.Event(r.instance, "Warning", statusError, reason)
-				return
-			}
+	managedCluster := r.instance.Status.ManagedCluster
+	if managedCluster != nil && *managedCluster != r.cluster.UID {
+		reason = "cannot change the cluster an index template refers to"
+		retErr = fmt.Errorf("%s", reason)
+		r.recorder.Event(r.instance, "Warning", opensearchRefMismatch, reason)
+		return ctrl.Result{
+			Requeue: false,
+		}, retErr
+	}
+
+	if pointer.BoolDeref(r.updateStatus, true) {
+		retErr = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
+			object.(*opsterv1.OpensearchIndexTemplate).Status.ManagedCluster = &r.cluster.UID
+		})
+		if retErr != nil {
+			reason = fmt.Sprintf("failed to update status: %s", retErr)
+			r.recorder.Event(r.instance, "Warning", statusError, reason)
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: opensearchClusterRequeueAfter,
+			}, retErr
 		}
 	}
 
@@ -137,94 +143,119 @@ func (r *IndexTemplateReconciler) Reconcile() (result ctrl.Result, err error) {
 		r.logger.Info("opensearch cluster is not running, requeueing")
 		reason = "waiting for opensearch cluster status to be running"
 		r.recorder.Event(r.instance, "Normal", opensearchPending, reason)
-		result = ctrl.Result{
+		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 10 * time.Second,
-		}
-		return
+			RequeueAfter: opensearchClusterRequeueAfter,
+		}, nil
 	}
 
-	r.osClient, err = util.CreateClientForCluster(r.client, r.ctx, r.cluster, r.osClientTransport)
-	if err != nil {
+	r.osClient, retErr = util.CreateClientForCluster(r.client, r.ctx, r.cluster, r.osClientTransport)
+	if retErr != nil {
 		reason = "error creating opensearch client"
 		r.recorder.Event(r.instance, "Warning", opensearchError, reason)
 		return
 	}
 
+	// If template name is not provided explicitly, use metadata.name by default
 	templateName = r.instance.Name
 	if r.instance.Spec.Name != "" {
 		templateName = r.instance.Spec.Name
 	}
 
-	// Check index template state to make sure we don't touch preexisting index templates
-	if r.instance.Status.ExistingIndexTemplate == nil {
-		var exists bool
-		exists, err = services.IndexTemplateExists(r.ctx, r.osClient, templateName)
-		if err != nil {
-			reason = "failed to get index template status from OpenSearch API"
-			r.logger.Error(err, reason)
+	newTemplate := helpers.TranslateIndexTemplateToRequest(r.instance.Spec)
+
+	existingTemplate, retErr := r.osClient.GetIndexTemplate(r.ctx, templateName)
+	// If not exists, create
+	if errors.Is(retErr, services.ErrNotFound) {
+		retErr = r.osClient.PutIndexTemplate(r.ctx, templateName, newTemplate)
+		if retErr != nil {
+			reason = "failed to create ism policy"
+			r.logger.Error(retErr, reason)
 			r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
-			return
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: defaultRequeueAfter,
+			}, retErr
 		}
-		if pointer.BoolDeref(r.updateStatus, true) {
-			err = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
-				instance := object.(*opsterv1.OpensearchIndexTemplate)
-				instance.Status.ExistingIndexTemplate = &exists
-			})
-			if err != nil {
-				reason = fmt.Sprintf("failed to update status: %s", err)
-				r.recorder.Event(r.instance, "Warning", statusError, reason)
-				return
-			}
-		} else {
-			// Emit an event for unit testing assertion
-			r.recorder.Event(r.instance, "Normal", "UnitTest", fmt.Sprintf("exists is %t", exists))
-			return
+		// Mark the ISM Policy as not pre-existing (created by the operator)
+		retErr = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
+			object.(*opsterv1.OpensearchIndexTemplate).Status.IndexTemplateName = templateName
+		})
+		if retErr != nil {
+			reason = "failed to update custom resource object"
+			r.logger.Error(retErr, reason)
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: defaultRequeueAfter,
+			}, retErr
 		}
+
+		r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "index template successfully created in OpenSearch Cluster")
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, nil
 	}
 
-	// If index template is existing do nothing
-	if *r.instance.Status.ExistingIndexTemplate {
-		reason = opensearchIndexTemplateExists
-		return
-	}
-
-	// the template name is immutable, so check the old name (r.instance.Status.IndexTemplateName) against the new
-	if r.instance.Status.IndexTemplateName != "" && templateName != r.instance.Status.IndexTemplateName {
-		reason = "cannot change the index template name"
-		err = fmt.Errorf("%s", reason)
-		r.recorder.Event(r.instance, "Warning", opensearchIndexTemplateNameMismatch, reason)
-		return
-	}
-
-	// rewrite the CRD format to the gateway format
-	resource := helpers.TranslateIndexTemplateToRequest(r.instance.Spec)
-
-	shouldUpdate, err := services.ShouldUpdateIndexTemplate(r.ctx, r.osClient, templateName, resource)
-	if err != nil {
-		reason = "failed to get index template status from OpenSearch API"
-		r.logger.Error(err, reason)
+	// If other error, report
+	if retErr != nil {
+		reason = "failed to get the index template from Opensearch API"
+		r.logger.Error(retErr, reason)
 		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
-		return
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, retErr
 	}
 
-	if !shouldUpdate {
+	// If the index template exists in OpenSearch cluster and was not created by the operator, update the status and return
+	if r.instance.Status.ExistingIndexTemplate == nil || *r.instance.Status.ExistingIndexTemplate {
+		retErr = r.client.UdateObjectStatus(r.instance, func(object client.Object) {
+			object.(*opsterv1.OpensearchIndexTemplate).Status.ExistingIndexTemplate = pointer.Bool(true)
+		})
+		if retErr != nil {
+			reason = "failed to update custom resource object"
+			r.logger.Error(retErr, reason)
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: defaultRequeueAfter,
+			}, retErr
+		}
+		reason = "the index template already exists in the OpenSearch cluster"
+		r.logger.Error(errors.New(opensearchIndexTemplateExists), reason)
+		r.recorder.Event(r.instance, "Warning", opensearchIndexTemplateExists, reason)
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, nil
+	}
+
+	// Return if there are no changes
+	if r.instance.Spec.Name == existingTemplate.Name && cmp.Equal(*newTemplate, existingTemplate.IndexTemplate, cmpopts.EquateEmpty()) {
 		r.logger.V(1).Info(fmt.Sprintf("index template %s is in sync", r.instance.Name))
-		result = ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}
-		return
+		r.recorder.Event(r.instance, "Normal", opensearchAPIUnchanged, "index template is in sync")
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, nil
 	}
 
-	err = services.CreateOrUpdateIndexTemplate(r.ctx, r.osClient, templateName, resource)
-	if err != nil {
-		reason = "failed to update index template with OpenSearch API"
-		r.logger.Error(err, reason)
+	retErr = r.osClient.PutIndexTemplate(r.ctx, templateName, newTemplate)
+	if retErr != nil {
+		reason = "failed to update the index template with Opensearch API"
+		r.logger.Error(retErr, reason)
 		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, retErr
 	}
 
 	r.recorder.Event(r.instance, "Normal", opensearchAPIUpdated, "index template updated in opensearch")
-
-	result = ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}
-	return
+	return ctrl.Result{
+		Requeue:      true,
+		RequeueAfter: defaultRequeueAfter,
+	}, nil
 }
 
 func (r *IndexTemplateReconciler) Delete() error {
@@ -258,18 +289,10 @@ func (r *IndexTemplateReconciler) Delete() error {
 		return err
 	}
 
+	// If PolicyID not provided explicitly, use metadata.name by default
 	templateName := r.instance.Name
 	if r.instance.Spec.Name != "" {
 		templateName = r.instance.Spec.Name
-	}
-
-	exist, err := services.IndexTemplateExists(r.ctx, r.osClient, templateName)
-	if err != nil {
-		return err
-	}
-	if !exist {
-		r.logger.V(1).Info("index template already deleted from opensearch")
-		return nil
 	}
 
 	return services.DeleteIndexTemplate(r.ctx, r.osClient, templateName)
