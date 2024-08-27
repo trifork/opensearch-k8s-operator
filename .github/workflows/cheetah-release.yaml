@@ -1,0 +1,21 @@
+name: Cheetah Release
+on:
+  workflow_dispatch:
+  push:
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  create-snapshot:
+    uses: ./.github/workflows/docker-create-snapshot.yaml
+    with:
+      context: opensearch-operator
+      image-name: opensearch-k8s-operator
+    secrets:
+      TRIFORK_GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}

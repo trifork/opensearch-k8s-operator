@@ -6,7 +6,7 @@ import (
 )
 
 // TranslateIndexTemplateToRequest rewrites the CRD format to the gateway format
-func TranslateIndexTemplateToRequest(spec v1.OpensearchIndexTemplateSpec) requests.IndexTemplate {
+func TranslateIndexTemplateToRequest(spec v1.OpensearchIndexTemplateSpec) *requests.IndexTemplate {
 	request := requests.IndexTemplate{
 		IndexPatterns: spec.IndexPatterns,
 		DataStream:    TranslateDatastreamToRequest(spec.DataStream),
@@ -21,7 +21,7 @@ func TranslateIndexTemplateToRequest(spec v1.OpensearchIndexTemplateSpec) reques
 		request.ComposedOf = spec.ComposedOf
 	}
 
-	return request
+	return &request
 }
 
 // TranslateComponentTemplateToRequest rewrites the CRD format to the gateway format

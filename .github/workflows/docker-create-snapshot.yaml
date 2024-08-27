@@ -1,0 +1,55 @@
+name: Docker Create Snapshot
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: The name of the image to create a snapshot for
+        required: true
+        type: string
+      context:
+        description: The directory to run the workflow inside
+        required: false
+        type: string
+        default: .
+      dockerfile-path:
+        description: The path to the Dockerfile. Defaults to {context}/Dockerfile
+        required: false
+        type: string
+    secrets:
+      TRIFORK_GITHUB_PAT:
+        description: A personal access token with permission to publish a package to the Trifork GitHub container registry
+        required: true
+
+jobs:
+  create-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to the container registry
+        uses: docker/login-action@1220aa36aaf257e736f1d64e3b87c4878665836f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.TRIFORK_GITHUB_PAT }}
+
+      - name: Get package suffix
+        id: get-package-suffix
+        run: echo "branch-name=$(echo '${{ github.ref_name }}' | sed 's/[^a-zA-Z0-9]/-/g')" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile-path }}
+          platforms: linux/amd64
+          tags: ghcr.io/trifork/${{ inputs.image-name }}:2.6.0-${{ steps.get-package-suffix.outputs.branch-name }}-SNAPSHOT-${{ github.run_number }}
+          push: true
+          secrets: |
+            GITHUB_ACTOR=${{ github.actor }}
+            GITHUB_TOKEN=${{ secrets.TRIFORK_GITHUB_PAT }}
