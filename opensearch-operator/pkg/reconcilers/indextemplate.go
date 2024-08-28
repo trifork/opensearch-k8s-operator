@@ -268,7 +268,22 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 	}, nil
 }
 
-func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, response *responses.IndexTemplate) bool {
+func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, response *responses.IndexTemplate) (bool, error) {
+	var err error
+	if response.IndexTemplate.Template.Settings != nil {
+		response.IndexTemplate.Template.Settings, err = helpers.SortedJsonKeys(response.IndexTemplate.Template.Settings)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	if response.IndexTemplate.Template.Mappings != nil {
+		response.IndexTemplate.Template.Mappings, err = helpers.SortedJsonKeys(response.IndexTemplate.Template.Mappings)
+		if err != nil {
+			return false, err
+		}
+	}
+
 	logger := r.logger.WithName("comparing index templates")
 	logger.Info("new: " + spew.Sdump(request))
 	logger.Info("existing: " + spew.Sdump(response.IndexTemplate))
@@ -286,7 +301,7 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 	logger.Info(fmt.Sprintf("Priority: %v", cmp.Equal(request.Priority, response.IndexTemplate.Priority, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Version: %v", cmp.Equal(request.Version, response.IndexTemplate.Version, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Meta: %v", cmp.Equal(request.Meta, response.IndexTemplate.Meta, cmpopts.EquateEmpty())))
-	return r.instance.Spec.Name == response.Name && cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty())
+	return r.instance.Spec.Name == response.Name && cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty()), nil
 }
 
 func (r *IndexTemplateReconciler) Delete() error {
