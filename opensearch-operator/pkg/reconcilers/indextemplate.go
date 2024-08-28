@@ -270,10 +270,10 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 
 func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, response *responses.IndexTemplate) bool {
 	logger := r.logger.WithName("comparing index templates")
-	logger.Info(spew.Sdump(request))
-	logger.Info(spew.Sdump(response.IndexTemplate))
+	logger.Info("new: " + spew.Sdump(request))
+	logger.Info("existing: " + spew.Sdump(response.IndexTemplate))
 	logger.Info(fmt.Sprintf("name: %v", r.instance.Spec.Name == response.Name))
-	logger.Info(fmt.Sprintf("%v", cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("full: %v", cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("IndexPatterns: %v", cmp.Equal(request.IndexPatterns, response.IndexTemplate.IndexPatterns, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("DataStream: %v", cmp.Equal(request.DataStream, response.IndexTemplate.DataStream, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Template: %v", cmp.Equal(request.Template, response.IndexTemplate.Template, cmpopts.EquateEmpty())))
