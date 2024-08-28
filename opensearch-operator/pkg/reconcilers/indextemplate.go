@@ -7,6 +7,8 @@ import (
 	"time"
 
 	opsterv1 "github.com/Opster/opensearch-k8s-operator/opensearch-operator/api/v1"
+	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/opensearch-gateway/requests"
+	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/opensearch-gateway/responses"
 	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/opensearch-gateway/services"
 	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/pkg/helpers"
 	"github.com/Opster/opensearch-k8s-operator/opensearch-operator/pkg/reconcilers/k8s"
@@ -237,9 +239,7 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 	}
 
 	// Return if there are no changes
-	r.logger.Info(spew.Sdump(existingTemplate))
-	r.logger.Info(spew.Sdump(newTemplate))
-	if r.instance.Spec.Name == existingTemplate.Name && cmp.Equal(*newTemplate, existingTemplate.IndexTemplate, cmpopts.EquateEmpty()) {
+	if r.equal(newTemplate, existingTemplate) {
 		r.logger.Info("Index template is in sync, no changes needed", "templateName", templateName)
 		r.recorder.Event(r.instance, "Normal", opensearchAPIUnchanged, "index template is in sync")
 		return ctrl.Result{
@@ -266,6 +266,12 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 		Requeue:      true,
 		RequeueAfter: defaultRequeueAfter,
 	}, nil
+}
+
+func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, response *responses.IndexTemplate) bool {
+	r.logger.Info(spew.Sdump(request))
+	r.logger.Info(spew.Sdump(response.IndexTemplate))
+	return r.instance.Spec.Name == response.Name && cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty())
 }
 
 func (r *IndexTemplateReconciler) Delete() error {
