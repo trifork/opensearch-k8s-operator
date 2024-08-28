@@ -292,22 +292,10 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 	}
 
 	if response.IndexTemplate.Template.Mappings != nil {
-		m := make(map[string]interface{})
-		if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
-			return false, err
-		}
-		logger.Info("mappings before sort: " + spew.Sdump(m))
-
 		response.IndexTemplate.Template.Mappings, err = helpers.SortedJsonKeys(response.IndexTemplate.Template.Mappings)
 		if err != nil {
 			return false, err
 		}
-
-		m = make(map[string]interface{})
-		if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
-			return false, err
-		}
-		logger.Info("mappings after sort: " + spew.Sdump(m))
 	}
 
 	if request.Template.Settings != nil {
@@ -333,6 +321,21 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 	logger.Info(fmt.Sprintf("Template: %v", cmp.Equal(request.Template, response.IndexTemplate.Template, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Template.Settings: %v", cmp.Equal(request.Template.Settings, response.IndexTemplate.Template.Settings, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Template.Mappings: %v", cmp.Equal(request.Template.Mappings, response.IndexTemplate.Template.Mappings, cmpopts.EquateEmpty())))
+
+	if request.Template.Mappings != nil && response.IndexTemplate.Template.Mappings == nil {
+		m := make(map[string]interface{})
+		if err := json.Unmarshal(request.Template.Mappings.Raw, &m); err != nil {
+			return false, err
+		}
+		logger.Info("new mappings: " + spew.Sdump(m))
+
+		m = make(map[string]interface{})
+		if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
+			return false, err
+		}
+		logger.Info("existing mappings: " + spew.Sdump(m))
+	}
+
 	logger.Info(fmt.Sprintf("ComposedOf: %v", cmp.Equal(request.ComposedOf, response.IndexTemplate.ComposedOf, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Priority: %v", cmp.Equal(request.Priority, response.IndexTemplate.Priority, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Version: %v", cmp.Equal(request.Version, response.IndexTemplate.Version, cmpopts.EquateEmpty())))
