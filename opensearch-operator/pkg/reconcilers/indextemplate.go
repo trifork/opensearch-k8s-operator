@@ -323,17 +323,10 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 	logger.Info(fmt.Sprintf("Template.Mappings: %v", cmp.Equal(request.Template.Mappings, response.IndexTemplate.Template.Mappings, cmpopts.EquateEmpty())))
 
 	if request.Template.Mappings != nil && response.IndexTemplate.Template.Mappings != nil {
-		m := make(map[string]interface{})
-		if err := json.Unmarshal(request.Template.Mappings.Raw, &m); err != nil {
-			return false, err
-		}
-		logger.Info("new mappings: " + spew.Sdump(m))
-
-		m = make(map[string]interface{})
-		if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
-			return false, err
-		}
-		logger.Info("existing mappings: " + spew.Sdump(m))
+		var map1, map2 map[string]interface{}
+		json.Unmarshal(request.Template.Mappings.Raw, &map1)
+		json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &map2)
+		logger.Info(fmt.Sprintf("Mappings: %v", cmp.Equal(map1, map2, cmpopts.EquateEmpty())))
 	}
 
 	logger.Info(fmt.Sprintf("ComposedOf: %v", cmp.Equal(request.ComposedOf, response.IndexTemplate.ComposedOf, cmpopts.EquateEmpty())))
