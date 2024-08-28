@@ -2,7 +2,6 @@ package reconcilers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -321,18 +320,17 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 	logger.Info(fmt.Sprintf("Template: %v", cmp.Equal(request.Template, response.IndexTemplate.Template, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Template.Settings: %v", cmp.Equal(request.Template.Settings, response.IndexTemplate.Template.Settings, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Template.Mappings: %v", cmp.Equal(request.Template.Mappings, response.IndexTemplate.Template.Mappings, cmpopts.EquateEmpty())))
-
-	if request.Template.Mappings != nil && response.IndexTemplate.Template.Mappings != nil {
-		var map1, map2 map[string]interface{}
-		json.Unmarshal(request.Template.Mappings.Raw, &map1)
-		json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &map2)
-		logger.Info(fmt.Sprintf("Mappings: %v", cmp.Equal(map1, map2, cmpopts.EquateEmpty())))
-	}
-
 	logger.Info(fmt.Sprintf("ComposedOf: %v", cmp.Equal(request.ComposedOf, response.IndexTemplate.ComposedOf, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Priority: %v", cmp.Equal(request.Priority, response.IndexTemplate.Priority, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Version: %v", cmp.Equal(request.Version, response.IndexTemplate.Version, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Meta: %v", cmp.Equal(request.Meta, response.IndexTemplate.Meta, cmpopts.EquateEmpty())))
+
+	if !cmp.Equal(request.Template.Settings, response.IndexTemplate.Template.Settings, cmpopts.EquateEmpty()) {
+		logger.Info("settings are different")
+		logger.Info(fmt.Sprintf("new: %v", request.Template.Settings))
+		logger.Info(fmt.Sprintf("existing: %v", response.IndexTemplate.Template.Settings))
+	}
+
 	return r.instance.Spec.Name == response.Name && cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty()), nil
 }
 
