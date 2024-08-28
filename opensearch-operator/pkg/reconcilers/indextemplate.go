@@ -283,12 +283,6 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, response *responses.IndexTemplate) (bool, error) {
 	logger := r.logger.WithName("comparing index templates")
 
-	m := make(map[string]interface{})
-	if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
-		return false, err
-	}
-	logger.Info("mappings before sort: " + spew.Sdump(m))
-
 	var err error
 	if response.IndexTemplate.Template.Settings != nil {
 		response.IndexTemplate.Template.Settings, err = helpers.SortedJsonKeys(response.IndexTemplate.Template.Settings)
@@ -298,16 +292,23 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 	}
 
 	if response.IndexTemplate.Template.Mappings != nil {
+		m := make(map[string]interface{})
+		if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
+			return false, err
+		}
+		logger.Info("mappings before sort: " + spew.Sdump(m))
+
 		response.IndexTemplate.Template.Mappings, err = helpers.SortedJsonKeys(response.IndexTemplate.Template.Mappings)
 		if err != nil {
 			return false, err
 		}
+
+		m = make(map[string]interface{})
+		if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
+			return false, err
+		}
+		logger.Info("mappings after sort: " + spew.Sdump(m))
 	}
-	m = make(map[string]interface{})
-	if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
-		return false, err
-	}
-	logger.Info("mappings after sort: " + spew.Sdump(m))
 
 	if request.Template.Settings != nil {
 		request.Template.Settings, err = helpers.SortedJsonKeys(request.Template.Settings)
