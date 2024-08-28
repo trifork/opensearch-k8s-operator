@@ -269,8 +269,18 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 }
 
 func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, response *responses.IndexTemplate) bool {
-	r.logger.Info(spew.Sdump(request))
-	r.logger.Info(spew.Sdump(response.IndexTemplate))
+	logger := r.logger.WithName("comparing index templates")
+	logger.Info(spew.Sdump(request))
+	logger.Info(spew.Sdump(response.IndexTemplate))
+	logger.Info(fmt.Sprintf("name: %v", r.instance.Spec.Name == response.Name))
+	logger.Info(fmt.Sprintf("%v", cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("IndexPatterns: %v", cmp.Equal(request.IndexPatterns, response.IndexTemplate.IndexPatterns, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("DataStream: %v", cmp.Equal(request.DataStream, response.IndexTemplate.DataStream, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("Template: %v", cmp.Equal(request.Template, response.IndexTemplate.Template, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("ComposedOf: %v", cmp.Equal(request.ComposedOf, response.IndexTemplate.ComposedOf, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("Priority: %v", cmp.Equal(request.Priority, response.IndexTemplate.Priority, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("Version: %v", cmp.Equal(request.Version, response.IndexTemplate.Version, cmpopts.EquateEmpty())))
+	logger.Info(fmt.Sprintf("Meta: %v", cmp.Equal(request.Meta, response.IndexTemplate.Meta, cmpopts.EquateEmpty())))
 	return r.instance.Spec.Name == response.Name && cmp.Equal(request, response.IndexTemplate, cmpopts.EquateEmpty())
 }
 
