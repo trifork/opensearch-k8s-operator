@@ -239,7 +239,18 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 	}
 
 	// Return if there are no changes
-	if r.equal(newTemplate, existingTemplate) {
+	equal, err := r.equal(newTemplate, existingTemplate)
+	if err != nil {
+		reason = "failed to compare index templates"
+		r.logger.Error(err, reason)
+		r.recorder.Event(r.instance, "Warning", opensearchAPIError, reason)
+		return ctrl.Result{
+			Requeue:      true,
+			RequeueAfter: defaultRequeueAfter,
+		}, err
+	}
+
+	if equal {
 		r.logger.Info("Index template is in sync, no changes needed", "templateName", templateName)
 		r.recorder.Event(r.instance, "Normal", opensearchAPIUnchanged, "index template is in sync")
 		return ctrl.Result{
