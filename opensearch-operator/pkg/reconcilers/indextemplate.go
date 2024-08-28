@@ -2,6 +2,7 @@ package reconcilers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -280,6 +281,14 @@ func (r *IndexTemplateReconciler) Reconcile() (retResult ctrl.Result, retErr err
 }
 
 func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, response *responses.IndexTemplate) (bool, error) {
+	logger := r.logger.WithName("comparing index templates")
+
+	m := make(map[string]interface{})
+	if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
+		return false, err
+	}
+	logger.Info("mappings before sort: " + spew.Sdump(m))
+
 	var err error
 	if response.IndexTemplate.Template.Settings != nil {
 		response.IndexTemplate.Template.Settings, err = helpers.SortedJsonKeys(response.IndexTemplate.Template.Settings)
@@ -294,6 +303,11 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 			return false, err
 		}
 	}
+	m = make(map[string]interface{})
+	if err := json.Unmarshal(response.IndexTemplate.Template.Mappings.Raw, &m); err != nil {
+		return false, err
+	}
+	logger.Info("mappings after sort: " + spew.Sdump(m))
 
 	if request.Template.Settings != nil {
 		request.Template.Settings, err = helpers.SortedJsonKeys(request.Template.Settings)
@@ -309,7 +323,6 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 		}
 	}
 
-	logger := r.logger.WithName("comparing index templates")
 	logger.Info("new: " + spew.Sdump(request))
 	logger.Info("existing: " + spew.Sdump(response.IndexTemplate))
 	logger.Info(fmt.Sprintf("name: %v", r.instance.Spec.Name == response.Name))
