@@ -295,6 +295,20 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 		}
 	}
 
+	if request.Template.Settings != nil {
+		request.Template.Settings, err = helpers.SortedJsonKeys(request.Template.Settings)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	if request.Template.Mappings != nil {
+		request.Template.Mappings, err = helpers.SortedJsonKeys(request.Template.Mappings)
+		if err != nil {
+			return false, err
+		}
+	}
+
 	logger := r.logger.WithName("comparing index templates")
 	logger.Info("new: " + spew.Sdump(request))
 	logger.Info("existing: " + spew.Sdump(response.IndexTemplate))
