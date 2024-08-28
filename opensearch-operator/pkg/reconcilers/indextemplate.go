@@ -322,7 +322,7 @@ func (r *IndexTemplateReconciler) equal(request *requests.IndexTemplate, respons
 	logger.Info(fmt.Sprintf("Template.Settings: %v", cmp.Equal(request.Template.Settings, response.IndexTemplate.Template.Settings, cmpopts.EquateEmpty())))
 	logger.Info(fmt.Sprintf("Template.Mappings: %v", cmp.Equal(request.Template.Mappings, response.IndexTemplate.Template.Mappings, cmpopts.EquateEmpty())))
 
-	if request.Template.Mappings != nil && response.IndexTemplate.Template.Mappings == nil {
+	if request.Template.Mappings != nil && response.IndexTemplate.Template.Mappings != nil {
 		m := make(map[string]interface{})
 		if err := json.Unmarshal(request.Template.Mappings.Raw, &m); err != nil {
 			return false, err
